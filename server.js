@@ -125,9 +125,10 @@ app.post('/connect-transport/:direction/:peerId', async (req, res) => {
   }
 });
 
-app.post('/send-track', async (req, res) => {
+app.post('/send-track/:kind/:peerId', async (req, res) => {
   try {
-    let { peerId, kind, rtpParameters, appData } = req.body;
+    let { peerId, kind } = req.params;
+    let { rtpParameters } = req.body;
     let transport = peers[peerId].sendTransport;
     
     console.log('transport'); //, transport);
@@ -142,7 +143,7 @@ app.post('/send-track', async (req, res) => {
       kind,
       rtpParameters,
       // paused: true,
-      appData: { ...appData, peerId }
+      // appData: { ...appData, peerId }
     });
 
     // if our associated transport closes, close ourself, too
@@ -153,12 +154,18 @@ app.post('/send-track', async (req, res) => {
 
     // console.log('producer', producer);
 
-    peers[peerId].producers = [];
-    peers[peerId].producers.push(producer);
+    if (kind === 'video') {
+      peers[peerId].videoProducer = producer;
+    } else if (kind === 'audio') {
+      peers[peerId].audioProducer = producer;
+    }
+
+    //peers[peerId].producers = [];
+    //peers[peerId].producers.push(producer);
 
     res.send({ id: producer.id });
 
-    await startRecord(peerId);
+    // await startRecord(peerId);
 
   } catch (e) {
     console.log(e)
@@ -180,7 +187,7 @@ async function startRecord(peerId) {
       // rtcpPort: 200001,
     });
 
-    let producer = peers[peerId].producers[0];
+    let producer = peers[peerId].videoProducer;
 
     const codecs = [];
     // Codec passed to the RTP Consumer must match the codec in the Mediasoup router rtpCapabilities
@@ -224,9 +231,9 @@ async function startRecord(peerId) {
   }
 }
 
-app.post('/recv-track/:peerId', async (req, res) => {
+app.post('/recv-track/:kind/:peerId', async (req, res) => {
   try {
-    let { peerId } = req.params;
+    let { kind, peerId } = req.params;
     let { mediaPeerId, mediaTag, rtpCapabilities } = req.body;
 
     let peerIds = _.without(Object.keys(peers), peerId);
@@ -242,13 +249,17 @@ app.post('/recv-track/:peerId', async (req, res) => {
     console.log('otherPeerId', peerIds, otherPeerId);
     let otherPeer = peers[otherPeerId];
     let peer = peers[peerId];
-
+    let producer;
     // console.log('producers', peers[peerId].producers);
-    let producer = otherPeer.producers[0];
+    if (kind === 'video') {
+      producer = otherPeer.videoProducer;
+    } else if (kind === 'audio') {
+      producer = otherPeer.audioProducer;
+    }     
     console.log('producer', producer.id);
 
     if (!router.canConsume({ producerId: producer.id, rtpCapabilities })) {
-      let msg = `client cannot consume ${peerId}`;
+      let msg = `client cannot consume ${kind} ${peerId}`;
       console.log(`recv-track: ${peerId} ${msg}`);
       res.send({ error: msg });
       return;
