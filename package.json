@@ -1,0 +1,18 @@
+{
+  "name": "mediasoup-single-page-sample",
+  "version": "0.1.0",
+  "description": "Mediasoup Sample Code",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "config": "^3.3.6",
+    "cors": "^2.8.5",
+    "express": "^4.16.4",
+    "lodash": "^4.17.21",
+    "mediasoup": "^3.6.24",
+    "mediasoup-client": "^3.6.21"
+  }
+}
