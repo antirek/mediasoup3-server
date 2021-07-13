@@ -12,7 +12,6 @@
     "cors": "^2.8.5",
     "express": "^4.16.4",
     "lodash": "^4.17.21",
-    "mediasoup": "^3.6.24",
-    "mediasoup-client": "^3.6.21"
+    "mediasoup": "^3.7.18"
   }
 }
