@@ -155,11 +155,11 @@ app.post('/send-track/:kind/:peerId', async (req, res) => {
     // console.log('producer', producer);
 
     if (kind === 'video') {
-      peers[peerId].videoProducer = producer;
+      peers[peerId].videoProducer = producer;      
     } else if (kind === 'audio') {
       peers[peerId].audioProducer = producer;
     }
-
+    await startRecord(peerId, kind);
     //peers[peerId].producers = [];
     //peers[peerId].producers.push(producer);
 
@@ -172,59 +172,80 @@ app.post('/send-track/:kind/:peerId', async (req, res) => {
   }
 });
 
-async function startRecord(peerId) {
+
+
+const publishProducerRtpStream = async (producer) => {
+  console.log('publishProducerRtpStream()');
+
+  // Create the mediasoup RTP Transport used to send media to the GStreamer process
+  const rtpTransport = await createRtpTransport();
+
+  // Set the receiver RTP ports
+  const remoteRtpPort = await getPort();
+
+  // Connect the mediasoup RTP transport to the ports used by GStreamer
+  await rtpTransport.connect({
+    ip: '127.0.0.1',
+    port: remoteRtpPort,
+  });
+
+  const codecs = [];
+  // Codec passed to the RTP Consumer must match the codec in the Mediasoup router rtpCapabilities
+  const routerCodec = router.rtpCapabilities.codecs.find(
+    codec => codec.kind === producer.kind
+  );
+  codecs.push(routerCodec);
+
+  const rtpCapabilities = {
+    codecs,
+    rtcpFeedback: []
+  };
+
+  // Start the consumer paused
+  // Once the gstreamer process is ready to consume resume and send a keyframe
+  const rtpConsumer = await rtpTransport.consume({
+    producerId: producer.id,
+    rtpCapabilities,
+    // paused: true
+  });
+
+  return {
+    remoteRtpPort,
+    localRtcpPort: rtpTransport.rtcpTuple ? rtpTransport.rtcpTuple.localPort : undefined,
+    rtpCapabilities,
+    rtpParameters: rtpConsumer.rtpParameters
+  };
+};
+
+async function startRecord(peerId, kind) {
   try {
-    console.log('start record', peerId);
-    peers[peerId].rtpTransport = await createRtpTransport();
+    console.log('start record', kind, peerId);
 
-    // console.log(peers[peerId]);
+    let producer;
+    if (kind === 'video') {
+      producer = peers[peerId].videoProducer;
+    } else if (kind === 'audio') {
+      producer = peers[peerId].audioProducer;
+    }
 
-    const rtpPort = await getPort();
-    console.log('rtp port', rtpPort);
-    await peers[peerId].rtpTransport.connect({
-      ip: '0.0.0.0',
-      port: rtpPort,
-      // rtcpPort: 200001,
-    });
+    console.log(' find producer', kind);
 
-    let producer = peers[peerId].videoProducer;
-
-    const codecs = [];
-    // Codec passed to the RTP Consumer must match the codec in the Mediasoup router rtpCapabilities
-    const routerCodec = router.rtpCapabilities.codecs.find(
-      codec => codec.kind === producer.kind
-    );
-    codecs.push(routerCodec);
-
-    console.log('codecs', codecs);
-
-    const rtpCapabilities = {
-      codecs,
-      rtcpFeedback: []
-    };
-
-    // Start the consumer paused
-    // Once the gstreamer process is ready to consume resume and send a keyframe
-    const rtpConsumer = await peers[peerId].rtpTransport.consume({
-      producerId: producer.id,
-      rtpCapabilities,
-      //paused: true
-    });
-
-
-    const d = {
-      remoteRtpPort: rtpPort,
-      // remoteRtcpPort: 20001,
-      localRtcpPort: peers[peerId].rtpTransport.rtcpTuple ? peers[peerId].rtpTransport.rtcpTuple.localPort : undefined,
-      rtpCapabilities,
-      rtpParameters: rtpConsumer.rtpParameters
-    };
+    const d = await publishProducerRtpStream(producer);
     console.log('data', JSON.stringify(d, false, 2));
 
     let recordInfo = {};
-    recordInfo['video'] = d;
+    recordInfo[kind] = d;
     recordInfo.fileName = Date.now().toString();
-    peers[peerId].process = new FFmpeg(recordInfo);
+
+    try {
+      if (kind === 'video') {
+        peers[peerId].processVideo = new FFmpeg(recordInfo, peerId, 'video');
+      } else if (kind === 'audio') {
+        peers[peerId].processAudio = new FFmpeg(recordInfo, peerId, 'audio');
+      }
+    } catch (e) {
+      console.log('error', e);
+    }
 
   } catch (e) {
     console.log('e', e);

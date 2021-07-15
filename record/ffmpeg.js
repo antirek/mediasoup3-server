@@ -9,15 +9,17 @@ const { convertStringToStream } = require('./utils');
 const RECORD_FILE_LOCATION_PATH = process.env.RECORD_FILE_LOCATION_PATH || './files';
 
 module.exports = class FFmpeg {
-  constructor (rtpParameters) {
+  constructor (rtpParameters, peerId = '', kind = 'video') {
     this._rtpParameters = rtpParameters;
     this._process = undefined;
     this._observer = new EventEmitter();
+    this.peerId = peerId;
+    this.kind = kind;
     this._createProcess();
   }
 
   _createProcess () {
-    const sdpString = createSdpText(this._rtpParameters);
+    const sdpString = createSdpText(this._rtpParameters, this.kind);
     const sdpStream = convertStringToStream(sdpString);
 
     console.log('createProcess() [sdpString:%s]', sdpString);
@@ -83,13 +85,18 @@ module.exports = class FFmpeg {
       'pipe:0'
     ];
 
-    commandArgs = commandArgs.concat(this._videoArgs);
+    if (this.kind === 'video') {
+      commandArgs = commandArgs.concat(this._videoArgs);
+    } else {
+      commandArgs = commandArgs.concat(this._audioArgs);
+    }
+    
     // commandArgs = commandArgs.concat(this._audioArgs);
 
     commandArgs = commandArgs.concat([
       '-flags',
       '+global_header',
-      `${RECORD_FILE_LOCATION_PATH}/${this._rtpParameters.fileName}.webm`
+      `${RECORD_FILE_LOCATION_PATH}/${this.peerId}-${this.kind}-${this._rtpParameters.fileName}.webm`
     ]);
 
     console.log('commandArgs:%o', commandArgs);
