@@ -45,6 +45,7 @@ async function start () {
 
 (start)();
 
+
 app.post('/rtpCapabilities', async (req, res) => {
   console.log('ttt');  
   res.json({ routerRtpCapabilities: router.rtpCapabilities });
@@ -92,6 +93,14 @@ async function createWebRtcTransport() {
     initialAvailableOutgoingBitrate: initialAvailableOutgoingBitrate,
 //    appData: { peerId, clientDirection: direction }
   });
+  
+  transport.on("icestatechange", (iceState) => {
+    console.log("ICE state changed to %s", iceState);
+  });
+
+  transport.on("iceselectedtuplechange", (iceSelectedTuple) => {
+    console.log("iceSelectedTuple changed to %s", iceSelectedTuple);
+  });
 
   return transport;
 }
@@ -102,6 +111,10 @@ async function createRtpTransport() {
   return transport;
 }
 
+let history = [];
+function log(peerId, data) {  
+  history.push({peerId, time: Date.now().toString(), ...data});
+}
 
 app.post('/connect-transport/:direction/:peerId', async (req, res) => {
   try {
@@ -146,10 +159,21 @@ app.post('/send-track/:kind/:peerId', async (req, res) => {
       // appData: { ...appData, peerId }
     });
 
+    producer.on('producerclose', () => {
+      console.log('!! producer closed', producer.id);
+      //      closeProducer(producer);
+    });
+
     // if our associated transport closes, close ourself, too
+    console.log('set transportclose event');
     producer.on('transportclose', () => {
       console.log('producer\'s transport closed', producer.id);
       //      closeProducer(producer);
+    });
+
+    producer.observer.on('transportclose', () => {
+      log('producer\'s transport closed', producer.id);
+      //closeProducer(producer);
     });
 
     // console.log('producer', producer);
@@ -159,6 +183,7 @@ app.post('/send-track/:kind/:peerId', async (req, res) => {
     } else if (kind === 'audio') {
       peers[peerId].audioProducer = producer;
     }
+    
     await startRecord(peerId, kind);
     //peers[peerId].producers = [];
     //peers[peerId].producers.push(producer);
@@ -209,6 +234,12 @@ const publishProducerRtpStream = async (producer) => {
     // paused: true
   });
 
+  rtpConsumer.on('producerclose', async () => {
+    console.log(`consumer's producer closed`, rtpConsumer.id);
+    //closeConsumer(rtpConsumer);
+    await rtpConsumer.close();
+  });
+
   return {
     remoteRtpPort,
     localRtcpPort: rtpTransport.rtcpTuple ? rtpTransport.rtcpTuple.localPort : undefined,
@@ -236,6 +267,8 @@ async function startRecord(peerId, kind) {
     let recordInfo = {};
     recordInfo[kind] = d;
     recordInfo.fileName = Date.now().toString();
+
+    log(peerId, {kind, filename: recordInfo.fileName});
 
     try {
       if (kind === 'video') {
@@ -279,6 +312,8 @@ app.post('/recv-track/:kind/:peerId', async (req, res) => {
     }     
     console.log('producer', producer.id);
 
+    console.log('history', history);
+    
     if (!router.canConsume({ producerId: producer.id, rtpCapabilities })) {
       let msg = `client cannot consume ${kind} ${peerId}`;
       console.log(`recv-track: ${peerId} ${msg}`);
